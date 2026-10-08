@@ -1,0 +1,62 @@
+# 防止把不该入镜像的内容复制进构建上下文（变小、变快、避免泄密）
+**/.git
+**/.gitignore
+**/.gitattributes
+
+# 依赖目录（容器内重新安装）
+node_modules
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+
+# 前端构建产物（容器外构建后再挂载，无需进镜像）
+dist
+dist-prod
+dist-test
+.vite
+artifacts
+outputs
+hengpintong-promo-video
+
+# IDE / OS
+.vscode
+.idea
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# 环境配置（绝不进镜像）
+.env
+.env.*
+!.env.example
+
+# 上传内容（runtime volume）
+backend-python/uploads/*
+backend-python/uploads-test
+backend-python/debug_logs
+backend-python/manual_checks
+certs
+
+# 文档与原型
+docs
+*.md
+!HRM_UPGRADE_NOTES.md
+
+# 日志
+logs
+*.log
+
+# 部署脚本（不需要进镜像）
+deploy-prod.ps1
+docker-compose.yml
+docker-compose.*.yml
+
+# 本地验证产物 / Windows 保留名异常文件
+nul
+backend-python/nul
+_test_minio.pdf
+verification-*.png

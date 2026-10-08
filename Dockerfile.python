@@ -1,0 +1,78 @@
+# =====================================================================
+# 恒聘通 - Python Flask 后端
+# 单阶段精简构建 + 非 root 用户运行
+# 设计：与原版相比只新增非 root 用户与健康检查；不引入额外编译期依赖避免 OOM
+# =====================================================================
+
+FROM python:3.11.11-slim-bookworm
+
+ARG DEBIAN_MIRROR=http://deb.debian.org/debian
+ARG DEBIAN_SECURITY_MIRROR=http://deb.debian.org/debian-security
+ARG PIP_INDEX_URL=https://pypi.org/simple
+
+# Keep official defaults while allowing the local offline builder to select a
+# reachable mirror without baking network-specific endpoints into runtime.
+RUN sed -Ei \
+        "s#https?://deb.debian.org/debian-security#${DEBIAN_SECURITY_MIRROR}#g; \
+         s#https?://deb.debian.org/debian#${DEBIAN_MIRROR}#g" \
+        /etc/apt/sources.list.d/debian.sources
+
+# 系统依赖（与原版保持一致：仅 gcc + libmysqlclient-dev + pkg-config + curl）
+# 额外装 fonts-noto-cjk：证书/大屏等 Pillow 渲染场景需要中文字体，否则中文显示为方块
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        gcc \
+        default-libmysqlclient-dev \
+        pkg-config \
+        curl \
+        ca-certificates \
+        fonts-noto-cjk \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# 创建非 root 用户运行（安全最佳实践）
+RUN groupadd --system --gid 1001 app \
+    && useradd --system --uid 1001 --gid app --create-home --shell /bin/bash app
+
+WORKDIR /app
+
+# 先复制 requirements.txt 利用 Docker 层缓存
+COPY backend-python/requirements.txt .
+
+# 安装 Python 依赖
+RUN pip install --no-cache-dir --index-url "$PIP_INDEX_URL" -r requirements.txt
+
+# 复制应用代码
+COPY --chown=app:app backend-python/ /app/
+
+# 上传目录
+RUN mkdir -p /app/uploads && chown -R app:app /app/uploads
+
+USER app
+
+EXPOSE 8888
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    FLASK_APP=app.py \
+    PORT=8888
+
+# 应用层健康检查
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -fsS "http://localhost:${PORT}/api/health" || exit 1
+
+# 用 gunicorn 运行（生产标配）
+# Worker 公式：(2 * CPU核数 + 1)，I/O 密集型用 gthread 配合多线程
+# 默认值适配 16 核服务器：4 workers × 8 threads = 32 并发
+CMD ["sh", "-c", "exec gunicorn \
+    --bind 0.0.0.0:${PORT} \
+    --workers ${GUNICORN_WORKERS:-4} \
+    --threads ${GUNICORN_THREADS:-8} \
+    --timeout ${GUNICORN_TIMEOUT:-120} \
+    --graceful-timeout 30 \
+    --keep-alive 5 \
+    --max-requests 1000 \
+    --max-requests-jitter 100 \
+    --access-logfile - \
+    --error-logfile - \
+    --log-level ${LOG_LEVEL:-info} \
+    'app:create_app()'"]

@@ -1,0 +1,129 @@
+# 依赖
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+
+# 构建产物
+dist/
+dist-prod/
+build/
+*.egg-info/
+artifacts/*
+!artifacts/README.md
+outputs/
+hengpintong-promo-video/
+
+# 本地大体积媒体项目与无关资料（不属于 SaaS 代码库）
+hrm-training-videos/
+中泰瑞泽/
+
+# 本地 AI 工具配置与扫描缓存
+.claude/
+.mimosa/
+
+# 个人 Obsidian 笔记副本（含账号口令，勿入库）
+docs/obsidian/
+
+# 内部资料（不上公开仓库）
+docs/superpowers/
+docs/features/
+docs/code-templates/
+docs/commercial-product-grade-audit-2026-06-30.md
+docs/hrm-goal-completion-audit.md
+docs/go-live-readiness.md
+docs/go-live-owner-evidence-checklist.md
+docs/final-release-go-no-go.md
+docs/release-acceptance-matrix.md
+docs/legal-filing-security-evidence-request.md
+docs/backend-dependency-audit-evidence.md
+docs/restore-drill-evidence-request.md
+docs/restore-drill-log.md
+docs/session-security-decision.md
+docs/skill-first-agent-runtime.md
+docs/ai-assistant-auto-test-log.md
+docs/ai-assistant-design-architecture.md
+docs/TRAINING_EXAM_VIBECODING_PLAN.md
+docs/HANDOVER.md
+docs/saas-release-delivery-runbook.md
+docs/data-restore-runbook.md
+AGENTS.md
+agent.md
+CLAUDE.md
+HRM_UPGRADE_NOTES.md
+DEV_DEPLOY_SAFETY.md
+PROJECT_OVERVIEW.md
+VERSION_NOTE.md
+
+# 真实业务数据表（含员工考核/薪酬等，勿入库）
+docs/*.xlsx
+docs/*.xls
+docs/*.csv
+
+# 根目录运行时上传（本地生成的证书等业务文件）
+/uploads/
+
+# 根目录历史部署包
+/hrm-saas-deploy-*.zip
+
+# 环境变量
+.env
+.env.local
+.env.production
+backend-python/.env
+
+# 本地开发 HTTPS 证书
+certs/
+
+# 数据库文件
+*.db
+*.sqlite
+
+# 上传文件（bind mount 目录，不入库）
+backend-python/uploads/
+
+# 日志
+*.log
+logs/
+
+# 测试缓存
+.hypothesis/
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Docker
+# .dockerignore 保留入库（控制构建上下文）
+
+# 备份文件
+backup*/
+*.backup
+*.bak
+
+# 临时文件
+*.tmp
+*.temp
+.cache/
+nul
+backend-python/nul
+_test_minio.pdf
+verification-*.png
+
+# gitee push: exclude all documents
+*.md
+docs/
+public/docs/

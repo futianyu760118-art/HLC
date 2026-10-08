@@ -1,0 +1,21 @@
+# 本地开发覆盖：禁用 MinIO 服务，后端回退本地 /uploads 存储
+# 原因：MinIO 官方 2025 年从 Docker Hub 撤架，锁定摘要 404，quay.io 直连被墙。
+# 用法：docker compose -f docker-compose.yml -f docker-compose.saas-preview.yml -f docker-compose.local-nominio.yml up -d
+services:
+  minio:
+    profiles:
+      - disabled
+  backend:
+    depends_on: !override
+      mysql:
+        condition: service_healthy
+    environment:
+      MINIO_ENDPOINT: ""
+      MINIO_ACCESS_KEY: ""
+      MINIO_SECRET_KEY: ""
+    # 用命名卷替代宿主机 bind mount，绕开 Docker Desktop 对 E: 盘共享挂载的故障
+    volumes: !override
+      - uploads-local:/app/uploads
+
+volumes:
+  uploads-local:
