@@ -1,0 +1,190 @@
+name: ${COMPOSE_PROJECT_NAME:-hengpintong-saas-preview}
+
+services:
+  # MySQL 数据库
+  mysql:
+    image: mysql@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hengpintong_saas}
+      MYSQL_USER: ${MYSQL_USER:?MYSQL_USER is required}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD is required}
+      DB_READONLY_USER: ${DB_READONLY_USER:-hengpintong_saas_ro}
+      DB_READONLY_PASSWORD: ${DB_READONLY_PASSWORD:?DB_READONLY_PASSWORD is required}
+      DB_READONLY_NAME: ${DB_READONLY_NAME:-hengpintong_saas}
+    expose:
+      - "3306"
+    # 不再向宿主机暴露 3306 — 仅同 Docker 网络访问。
+    # 如确需本机连接调试，可在 docker-compose.override.yml 里覆盖。
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./init.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
+      - ./init-readonly-user.sh:/docker-entrypoint-initdb.d/20-readonly-user.sh:ro
+    networks:
+      - hengpintong-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "$$MYSQL_USER", "-p$$MYSQL_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    command: >
+      --default-authentication-plugin=mysql_native_password
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # MinIO 对象存储（培训视频/大文件）
+  minio:
+    image: minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:?请在.env中设置MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:?请在.env中设置MINIO_SECRET_KEY}
+    command: server /data --console-address ":9001"
+    expose:
+      - "9000"   # S3 API（仅同 Docker 网络访问）
+      - "9001"   # 控制台（按需在 override 里映射到宿主机）
+    volumes:
+      - minio-data:/data
+    networks:
+      - hengpintong-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+
+  # Python Flask 后端
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.python
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: ${DB_USER:?DB_USER is required}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      DB_NAME: ${DB_NAME:-hengpintong_saas}
+      DB_READONLY_HOST: ${DB_READONLY_HOST:-mysql}
+      DB_READONLY_PORT: ${DB_READONLY_PORT:-3306}
+      DB_READONLY_USER: ${DB_READONLY_USER:-hengpintong_saas_ro}
+      DB_READONLY_PASSWORD: ${DB_READONLY_PASSWORD:?DB_READONLY_PASSWORD is required}
+      DB_READONLY_NAME: ${DB_READONLY_NAME:-hengpintong_saas}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required (min 32 chars random)}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required (min 32 chars random)}
+      FRONTEND_URL: ${FRONTEND_URL:?FRONTEND_URL is required (do not use *)}
+      SILICONFLOW_API_KEY: ${SILICONFLOW_API_KEY:-}
+      SILICONFLOW_API_URL: ${SILICONFLOW_API_URL:-https://api.siliconflow.cn/v1}
+      SILICONFLOW_MODEL: ${SILICONFLOW_MODEL:-deepseek-ai/DeepSeek-V3}
+      ASSISTANT_MODEL: ${ASSISTANT_MODEL:-deepseek-ai/DeepSeek-V4-Pro}
+      ASSISTANT_SMALL_MODEL: ${ASSISTANT_SMALL_MODEL:-deepseek-ai/DeepSeek-V3}
+      ASSISTANT_STANDARD_MODEL: ${ASSISTANT_STANDARD_MODEL:-deepseek-ai/DeepSeek-V3}
+      ASSISTANT_STRONG_MODEL: ${ASSISTANT_STRONG_MODEL:-deepseek-ai/DeepSeek-V4-Pro}
+      ASSISTANT_SKILL_FIRST_SYNTHESIS: ${ASSISTANT_SKILL_FIRST_SYNTHESIS:-1}
+      ASSISTANT_SKILL_FIRST_UNDERSTANDING_TIMEOUT: ${ASSISTANT_SKILL_FIRST_UNDERSTANDING_TIMEOUT:-8}
+      ASSISTANT_SKILL_FIRST_PLANNER_TIMEOUT: ${ASSISTANT_SKILL_FIRST_PLANNER_TIMEOUT:-18}
+      ASSISTANT_SKILL_FIRST_SLOT_TIMEOUT: ${ASSISTANT_SKILL_FIRST_SLOT_TIMEOUT:-8}
+      ASSISTANT_SKILL_FIRST_SYNTHESIS_TIMEOUT: ${ASSISTANT_SKILL_FIRST_SYNTHESIS_TIMEOUT:-5}
+      ASSISTANT_SKILL_FIRST_LLM_HEALTH_FAILURE_THRESHOLD: ${ASSISTANT_SKILL_FIRST_LLM_HEALTH_FAILURE_THRESHOLD:-8}
+      BUSINESS_TIMEZONE: ${BUSINESS_TIMEZONE:-Asia/Shanghai}
+      PORT: ${BACKEND_PORT:-18888}
+      # 对象存储（视频/大文件）。未配置时自动回退本地 /uploads。
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-hrm-courses}
+      MINIO_SECURE: ${MINIO_SECURE:-false}
+      MAX_VIDEO_UPLOAD_MB: ${MAX_VIDEO_UPLOAD_MB:-500}
+      OA_EMPLOYEE_SYNC_ENABLED: ${OA_EMPLOYEE_SYNC_ENABLED:-0}
+      OA_DB_HOST: ${OA_DB_HOST:-}
+      OA_DB_PORT: ${OA_DB_PORT:-2807}
+      OA_DB_USER: ${OA_DB_USER:-}
+      OA_DB_PASSWORD: ${OA_DB_PASSWORD:-}
+      ATTENDANCE_SYNC_ENABLED: ${ATTENDANCE_SYNC_ENABLED:-0}
+      ATTENDANCE_DB_HOST: ${ATTENDANCE_DB_HOST:-}
+      ATTENDANCE_DB_PORT: ${ATTENDANCE_DB_PORT:-2807}
+      ATTENDANCE_DB_NAME: ${ATTENDANCE_DB_NAME:-Kaoqin}
+      ATTENDANCE_DB_USER: ${ATTENDANCE_DB_USER:-}
+      ATTENDANCE_DB_PASSWORD: ${ATTENDANCE_DB_PASSWORD:-}
+      ATTENDANCE_SYNC_LOOKBACK_DAYS: ${ATTENDANCE_SYNC_LOOKBACK_DAYS:-90}
+      ATTENDANCE_SYNC_INTERVAL_SECONDS: ${ATTENDANCE_SYNC_INTERVAL_SECONDS:-300}
+    expose:
+      - "${BACKEND_PORT:-18888}"
+    # 后端不直接对外暴露，由 Nginx 反代
+    volumes:
+      - ./backend-python/uploads:/app/uploads
+    depends_on:
+      mysql:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    networks:
+      - hengpintong-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:${BACKEND_PORT:-18888}/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # 安全加固
+    read_only: false
+    security_opt:
+      - no-new-privileges:true
+
+  # Nginx 前端 + 反向代理
+  nginx:
+    image: nginx@sha256:8b1e78743a03dbb2c95171cc58639fef29abc8816598e27fb910ed2e621e589a
+    ports:
+      - "${NGINX_PORT:-18280}:80"
+      - "${NGINX_HTTPS_PORT:-18445}:443"
+    volumes:
+      - ./dist-prod:/usr/share/nginx/html:ro
+      - ./nginx-docker.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      - backend
+    networks:
+      - hengpintong-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  mysql-data:
+  minio-data:
+
+networks:
+  hengpintong-network:
+    driver: bridge

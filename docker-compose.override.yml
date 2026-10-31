@@ -1,0 +1,5 @@
+services:
+  backend:
+    environment:
+      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-4}
+      GUNICORN_THREADS: ${GUNICORN_THREADS:-8}

@@ -1,0 +1,1257 @@
+version: assistant.evaluation.v1
+failure_taxonomy:
+- intent_recognition
+- entity_resolution
+- time_range
+- page_context
+- data_retrieval
+- module_relationship
+- permission_policy
+- tool_calling
+- response_composition
+- frontend_rendering
+- test_data_consistency
+- audit_confirmation
+cases:
+- id: attendance_employee_anomaly
+  side_effect: read_only
+  question: 吴明华最近考勤异常吗？请给证据
+  scenario: 考勤异常分析
+  expected_modules:
+  - employees
+  - attendance_records
+  - attendance_stats
+  - leave_requests
+  expected_render_blocks:
+  - markdown
+  - kpi
+  - chart
+  - table
+  - timeline
+  - sources
+  expected_behavior:
+  - 解析员工实体和最近时间范围
+  - 汇总考勤记录与统计
+  - 用请假审批解释可解释异常
+  - 给出可跳转证据
+  requires_confirmation: false
+  root_cause_dimensions:
+  - entity_resolution
+  - time_range
+  - data_retrieval
+  - module_relationship
+  - response_composition
+  min_field_evidence_count: 8
+  expected_field_evidence_modules:
+  - employees
+  - attendance_records
+  - attendance_stats
+  - leave_requests
+- id: attendance_top_notify
+  side_effect: read_only
+  question: 帮我给本月迟到最多的5个人生成提醒
+  scenario: 审批/通知辅助
+  expected_modules:
+  - employees
+  - attendance_records
+  - attendance_stats
+  - notifications
+  expected_render_blocks:
+  - markdown
+  - kpi
+  - table
+  - confirmation
+  - sources
+  expected_behavior:
+  - 排名本月迟到员工
+  - 生成提醒草稿
+  - 展示影响对象和摘要
+  - 等待二次确认
+  requires_confirmation: true
+  root_cause_dimensions:
+  - time_range
+  - data_retrieval
+  - audit_confirmation
+  - frontend_rendering
+  min_field_evidence_count: 6
+  expected_field_evidence_modules:
+  - employees
+  - attendance_records
+  - attendance_stats
+- id: confirmed_attendance_notification_execution
+  side_effect: business_write
+  question: 帮我给本月迟到最多的5个人生成提醒，并在确认后检查通知是否真实写入
+  preparation_question: 帮我给本月迟到最多的5个人生成提醒
+  scenario: 写入动作确认执行
+  expected_modules:
+  - employees
+  - attendance_records
+  - attendance_stats
+  - notifications
+  expected_render_blocks:
+  - markdown
+  - table
+  - confirmation
+  - sources
+  expected_behavior:
+  - 第一轮只能生成通知草稿和确认卡，不能直接写入通知
+  - 第二轮必须携带确认动作 ID 执行白名单通知工具
+  - 执行后写入通知中心，并消费待确认动作，避免重复确认再次执行
+  - 评估记录需保留准备、确认、写入和审计证据
+  requires_confirmation: true
+  confirmation_flow: true
+  confirmation_flow_type: notification
+  root_cause_dimensions:
+  - audit_confirmation
+  - tool_calling
+  - data_retrieval
+  - module_relationship
+  min_field_evidence_count: 6
+  expected_field_evidence_modules:
+  - employees
+  - attendance_records
+  - notifications
+  - operation_logs
+- id: confirmed_approval_decision_execution
+  side_effect: business_write
+  question: 请通过一条临时审批，并在确认后检查审批记录、业务单据和操作审计是否真实写入
+  preparation_question: 请通过审批 {approval_id}
+  scenario: 审批动作确认执行
+  expected_modules:
+  - approvals
+  - leave_requests
+  - operation_logs
+  expected_render_blocks:
+  - markdown
+  - table
+  - confirmation
+  - status
+  - sources
+  expected_behavior:
+  - 运行前创建隔离临时待审批申请，避免污染固定演示审批状态
+  - 第一轮只能展示审批动作摘要、影响范围和确认卡，不能直接改审批状态
+  - 第二轮必须携带确认动作 ID 执行审批白名单工具
+  - 执行后写入审批记录、更新关联员工申请、记录操作日志并消费待确认动作
+  - 重复确认必须被拦截，不能再次写入审批记录或再次改业务单据
+  requires_confirmation: true
+  confirmation_flow: true
+  confirmation_flow_type: approval
+  expected_approval_action: approve
+  expected_approval_status: approved
+  expected_business_status: approved
+  root_cause_dimensions:
+  - audit_confirmation
+  - tool_calling
+  - module_relationship
+  - test_data_consistency
+  min_field_evidence_count: 5
+  expected_field_evidence_modules:
+  - approvals
+  - leave_requests
+  - operation_logs
+- id: confirmed_approval_rejection_execution
+  side_effect: business_write
+  question: 请驳回一条临时审批，并在确认后检查审批记录、业务单据和操作审计是否真实写入
+  preparation_question: 请驳回审批 {approval_id}，意见：材料不完整，退回补充
+  scenario: 审批动作确认执行
+  expected_modules:
+  - approvals
+  - leave_requests
+  - operation_logs
+  expected_render_blocks:
+  - markdown
+  - table
+  - confirmation
+  - status
+  - sources
+  expected_behavior:
+  - 运行前创建隔离临时待审批申请，避免污染固定演示审批状态
+  - 第一轮只能展示驳回动作摘要、影响范围和确认卡，不能直接改审批状态
+  - 第二轮必须携带确认动作 ID 执行审批白名单工具，且动作为 reject
+  - 执行后写入审批记录、将关联员工申请同步为 rejected、记录操作日志并消费待确认动作
+  - 重复确认必须被拦截，不能再次写入审批记录或再次改业务单据
+  requires_confirmation: true
+  confirmation_flow: true
+  confirmation_flow_type: approval
+  expected_approval_action: reject
+  expected_approval_status: rejected
+  expected_business_status: rejected
+  root_cause_dimensions:
+  - audit_confirmation
+  - tool_calling
+  - module_relationship
+  - test_data_consistency
+  min_field_evidence_count: 5
+  expected_field_evidence_modules:
+  - approvals
+  - leave_requests
+  - operation_logs
+- id: employee_profile_cross_module
+  side_effect: read_only
+  question: 给我看张三的员工画像，包含考勤、请假审批、绩效、薪资、异动和通知
+  scenario: 员工画像
+  expected_modules:
+  - employees
+  - attendance_records
+  - leave_requests
+  - approvals
+  - performance_reviews
+  - salary_profiles
+  - employee_changes
+  - notifications
+  expected_render_blocks:
+  - markdown
+  - entity_cards
+  - kpi
+  - timeline
+  - status
+  - sources
+  expected_behavior:
+  - 合并员工档案、岗位、部门、考勤、请假/加班/出差/补卡申请、审批、绩效、薪资、异动和通知
+  - 用申请和审批解释可解释考勤异常或流程状态
+  - 薪资按权限脱敏
+  - 标出异常与风险
+  - 员工、考勤、审批、绩效、薪资、异动、通知等来源需包含字段级证据
+  requires_confirmation: false
+  min_field_evidence_count: 18
+  expected_field_evidence_modules:
+  - employees
+  - attendance_records
+  - approvals
+  - performance_reviews
+  - salary_profiles
+  - employee_changes
+  - notifications
+  root_cause_dimensions:
+  - permission_policy
+  - module_relationship
+  - data_retrieval
+  - response_composition
+- id: employee_lifecycle_full_chain
+  side_effect: read_only
+  question: 吴明华从简历录入到入职、培训、发薪和离职的完整链路有哪些记录？
+  scenario: 员工完整生命周期链路
+  expected_modules:
+  - employees
+  - candidates
+  - resumes
+  - jobs
+  - interviews
+  - offers
+  - onboarding_tasks
+  - contracts
+  - attendance_records
+  - leave_requests
+  - approvals
+  - performance_reviews
+  - training_records
+  - salary_profiles
+  - payroll_records
+  - probations
+  - employee_changes
+  - resignations
+  - notifications
+  expected_render_blocks:
+  - markdown
+  - entity_cards
+  - kpi
+  - timeline
+  - table
+  - status
+  - sources
+  expected_behavior:
+  - 不把问题误判为单一简历查询
+  - 识别吴明华员工实体并串联招聘、入职、培训、薪酬、绩效、异动和离职记录
+  - 返回可跳转的关联实体和来源证据
+  - 用多形态展示呈现生命周期时间线、关键指标、表格和状态
+  - 生命周期中的招聘、员工、绩效、培训、薪酬、异动来源需包含字段级证据
+  requires_confirmation: false
+  min_field_evidence_count: 30
+  expected_field_evidence_modules:
+  - employees
+  - candidates
+  - resumes
+  - jobs
+  - interviews
+  - performance_reviews
+  - training_records
+  - salary_profiles
+  - payroll_records
+  - employee_changes
+  root_cause_dimensions:
+  - intent_recognition
+  - entity_resolution
+  - module_relationship
+  - data_retrieval
+  - response_composition
+- id: recruitment_match_matrix
+  side_effect: read_only
+  question: 电子工程师岗位最近候选人谁更合适？给对比矩阵
+  scenario: 招聘匹配
+  expected_modules:
+  - jobs
+  - candidates
+  - resumes
+  - interviews
+  expected_render_blocks:
+  - markdown
+  - table
+  - matrix
+  - entity_cards
+  - sources
+  expected_behavior:
+  - 识别岗位
+  - 拉取候选人、简历和面试证据
+  - 输出候选人对比与推荐顺序
+  - 岗位、候选人、简历、面试来源需包含字段级证据
+  requires_confirmation: false
+  min_field_evidence_count: 10
+  expected_field_evidence_modules:
+  - jobs
+  - candidates
+  - resumes
+  - interviews
+  root_cause_dimensions:
+  - intent_recognition
+  - entity_resolution
+  - data_retrieval
+  - response_composition
+- id: confirmed_interview_schedule_from_workset
+  side_effect: business_write
+  question: 电子工程师岗位最近候选人谁更合适？然后给第二位安排{schedule_at}面试，并在确认后检查面试是否真实写入
+  preparation_question: 给第二位安排{schedule_at}面试
+  preparation_turns:
+  - question: 电子工程师岗位最近候选人谁更合适？给对比矩阵
+  - question: 给第二位安排{schedule_at}面试
+  scenario: 招聘写入动作确认执行
+  expected_modules:
+  - jobs
+  - candidates
+  - resumes
+  - interviews
+  expected_render_blocks:
+  - markdown
+  - matrix
+  - table
+  - entity_cards
+  - workset
+  - confirmation
+  - status
+  - sources
+  expected_behavior:
+  - 第一轮建立电子工程师岗位候选人结果集并解析第二位候选人
+  - 准备阶段只能展示面试安排摘要、影响对象和确认卡，不能直接创建面试
+  - 确认阶段必须携带动作 ID 执行白名单面试创建工具
+  - 执行后写入面试记录、关联岗位和简历，并消费待确认动作
+  - 重复确认必须被拦截，不能再次创建面试
+  requires_confirmation: true
+  confirmation_flow: true
+  confirmation_flow_type: interview
+  root_cause_dimensions:
+  - entity_resolution
+  - page_context
+  - audit_confirmation
+  - tool_calling
+  - module_relationship
+  min_field_evidence_count: 6
+  expected_field_evidence_modules:
+  - candidates
+  - resumes
+  - jobs
+  - interviews
+- id: employee_change_impact
+  side_effect: read_only
+  question: 如果把李四调到研发部，会影响哪些岗位、薪资、通知和审批？
+  scenario: 员工异动影响分析
+  expected_modules:
+  - employees
+  - departments
+  - jobs
+  - salary_profiles
+  - employee_changes
+  - approvals
+  - notifications
+  expected_render_blocks:
+  - markdown
+  - timeline
+  - status
+  - confirmation
+  - sources
+  expected_behavior:
+  - 识别这是模拟/建议，不直接改数据
+  - 分析调岗影响范围
+  - 如要发起异动，必须进入确认区
+  requires_confirmation: true
+  root_cause_dimensions:
+  - intent_recognition
+  - module_relationship
+  - permission_policy
+  - audit_confirmation
+  min_field_evidence_count: 8
+  expected_field_evidence_modules:
+  - employees
+  - departments
+  - salary_profiles
+  - employee_changes
+  - approvals
+- id: confirmed_employee_change_submission_execution
+  side_effect: business_write
+  question: 如果把临时员工调到研发部，并在确认后检查员工异动申请、审批和操作审计是否真实写入
+  preparation_question: 把{employee_name}调到{target_department}，先分析影响并准备确认
+  scenario: 员工异动确认提交
+  expected_modules:
+  - employees
+  - departments
+  - employee_changes
+  - approvals
+  - operation_logs
+  - notifications
+  expected_render_blocks:
+  - markdown
+  - table
+  - timeline
+  - status
+  - confirmation
+  - sources
+  expected_behavior:
+  - 运行前创建隔离临时员工和目标部门，避免污染固定演示员工
+  - 第一轮只能做异动影响分析和确认卡，不能写入员工异动或直接修改员工档案
+  - 第二轮必须携带确认动作 ID 执行员工异动提交白名单工具
+  - 确认后创建 pending 员工异动申请、pending 审批实例、审批通知和操作日志
+  - 审批通过前员工部门、岗位、薪资不能被直接修改
+  - 重复确认必须被拦截，不能再次创建异动申请或审批
+  requires_confirmation: true
+  confirmation_flow: true
+  confirmation_flow_type: employee_change
+  root_cause_dimensions:
+  - audit_confirmation
+  - tool_calling
+  - module_relationship
+  - test_data_consistency
+  min_field_evidence_count: 6
+  expected_field_evidence_modules:
+  - employees
+  - employee_changes
+  - approvals
+  - operation_logs
+  - notifications
+- id: confirmed_salary_adjustment_submission_execution
+  side_effect: business_write
+  question: 给临时员工调薪，并在确认后检查调薪异动申请、审批、通知和操作审计是否真实写入
+  preparation_question: 给{employee_name}调薪 {salary_adjustment} 元，先分析影响并准备确认
+  scenario: 调薪确认提交
+  expected_modules:
+  - employees
+  - salary_profiles
+  - performance_reviews
+  - employee_changes
+  - approvals
+  - operation_logs
+  - notifications
+  expected_render_blocks:
+  - markdown
+  - kpi
+  - table
+  - timeline
+  - status
+  - confirmation
+  - sources
+  expected_behavior:
+  - 运行前创建隔离临时员工、薪资档案和绩效记录，避免污染固定演示员工
+  - 第一轮只能做调薪影响分析和确认卡，不能写入员工异动或直接修改薪资档案
+  - 第二轮必须携带确认动作 ID 执行员工异动提交白名单工具，并写入 salary_adjustment 类型异动
+  - 确认后创建 pending 调薪异动申请、pending 审批实例、审批通知和操作日志
+  - 审批通过前薪资档案不能被直接修改，重复确认必须被拦截
+  requires_confirmation: true
+  confirmation_flow: true
+  confirmation_flow_type: salary_adjustment
+  salary_adjustment: 1800
+  root_cause_dimensions:
+  - audit_confirmation
+  - tool_calling
+  - module_relationship
+  - permission_policy
+  - test_data_consistency
+  min_field_evidence_count: 6
+  expected_field_evidence_modules:
+  - employees
+  - salary_profiles
+  - performance_reviews
+  - employee_changes
+  - approvals
+- id: payroll_performance_link
+  side_effect: read_only
+  question: 本季度绩效低于B的人，薪资和考勤有没有共同异常？
+  scenario: 薪资绩效联动
+  expected_modules:
+  - employees
+  - performance_reviews
+  - salary_profiles
+  - attendance_records
+  expected_render_blocks:
+  - markdown
+  - kpi
+  - table
+  - chart
+  - sources
+  expected_behavior:
+  - 按绩效周期筛选
+  - 关联薪资档案和考勤异常
+  - 输出共性原因和风险提醒
+  - 员工、绩效、薪资、考勤来源需包含字段级证据
+  requires_confirmation: false
+  min_field_evidence_count: 12
+  expected_field_evidence_modules:
+  - employees
+  - performance_reviews
+  - salary_profiles
+  - attendance_records
+  root_cause_dimensions:
+  - time_range
+  - module_relationship
+  - permission_policy
+  - data_retrieval
+- id: ambiguous_person_clarify
+  side_effect: read_only
+  question: 看看小王最近怎么样
+  scenario: 低置信度澄清
+  expected_modules:
+  - employees
+  - candidates
+  expected_render_blocks:
+  - clarification
+  expected_behavior:
+  - 不编造具体对象
+  - 当员工/候选人重名或不明确时要求澄清
+  requires_confirmation: false
+  root_cause_dimensions:
+  - entity_resolution
+  - intent_recognition
+- id: page_context_attendance_followup
+  side_effect: read_only
+  question: 就按当前筛选条件，解释为什么统计里没有这些记录
+  scenario: 当前页面上下文
+  expected_modules:
+  - attendance_records
+  - attendance_stats
+  expected_render_blocks:
+  - markdown
+  - status
+  - sources
+  expected_behavior:
+  - 读取当前页面路径和筛选条件
+  - 对比记录和统计口径
+  - 给出口径差异或数据缺失原因
+  requires_confirmation: false
+  root_cause_dimensions:
+  - page_context
+  - data_retrieval
+  - module_relationship
+  - response_composition
+  min_field_evidence_count: 4
+  expected_field_evidence_modules:
+  - employees
+  - attendance_records
+  - attendance_stats
+- id: page_context_job_filter_gap
+  side_effect: read_only
+  question: 按当前筛选分析岗位缺口和开放岗位数量
+  scenario: 当前页面上下文
+  expected_modules:
+  - jobs
+  expected_render_blocks:
+  - markdown
+  - kpi
+  - sources
+  expected_behavior:
+  - 读取岗位管理页当前筛选条件
+  - 将部门、状态、搜索等筛选转成招聘/岗位查询参数
+  - 汇总当前筛选下的开放岗位数量和缺口判断
+  - 返回岗位管理入口作为证据
+  requires_confirmation: false
+  root_cause_dimensions:
+  - page_context
+  - data_retrieval
+  - module_relationship
+  - response_composition
+  min_field_evidence_count: 4
+  expected_field_evidence_modules:
+  - jobs
+  - candidates
+  - resumes
+- id: page_context_salary_performance_risk
+  side_effect: read_only
+  question: 按当前筛选解释薪资绩效和考勤风险
+  scenario: 当前页面上下文
+  expected_modules:
+  - employees
+  - salary_profiles
+  - performance_reviews
+  - attendance_records
+  expected_render_blocks:
+  - markdown
+  - kpi
+  - table
+  - chart
+  - sources
+  expected_behavior:
+  - 读取薪资档案或绩效页当前员工/周期筛选
+  - 将筛选传入薪资绩效联动工具
+  - 关联绩效、薪资档案和考勤异常
+  - 输出风险说明与证据来源
+  requires_confirmation: false
+  root_cause_dimensions:
+  - page_context
+  - data_retrieval
+  - module_relationship
+  - permission_policy
+  - response_composition
+  min_field_evidence_count: 8
+  expected_field_evidence_modules:
+  - employees
+  - salary_profiles
+  - performance_reviews
+  - attendance_records
+- id: system_model_settings_trace
+  side_effect: read_only
+  question: AI 模型管理现在有哪些模型配置？给我证据和入口
+  scenario: 系统设置与模型配置
+  expected_modules:
+  - system_settings
+  expected_render_blocks:
+  - markdown
+  - table
+  - entity_cards
+  - sources
+  expected_behavior:
+  - 识别 AI 模型管理属于系统设置能力
+  - 读取 settings 表里的 assistantModelSettings 配置
+  - 不把“给我证据和入口”这类自然语言尾句误当作过滤关键词
+  - 返回可跳转到 AI 模型管理页的证据
+  requires_confirmation: false
+  required_patterns:
+  - assistantModelSettings
+  - /ai-model-settings|AI 模型管理
+  forbidden_patterns:
+  - companyName
+  root_cause_dimensions:
+  - intent_recognition
+  - entity_resolution
+  - data_retrieval
+  - module_relationship
+  - response_composition
+- id: payroll_permission_denied_employee
+  side_effect: read_only
+  question: 查张三本月工资条和薪资明细
+  scenario: 权限与脱敏边界
+  run_as_role: employee
+  expected_modules:
+  - payroll_records
+  expected_render_blocks:
+  - markdown
+  - notice
+  expected_error_code: permission_denied
+  expected_behavior:
+  - 普通员工不能查询他人的工资条或薪资明细
+  - 响应必须明确说明权限不足
+  - 不得泄露应发、实发、奖金、个税、社保或薪资档案金额
+  - 评估记录需把预期权限拒绝识别为通过而不当成系统错误
+  requires_confirmation: false
+  forbidden_patterns:
+  - (应发|实发|工资|薪资|月薪|奖金|个税|社保).{0,12}\d{4,}
+  - \b(?:18888|25000|28000|30000|32000)\b
+  - \d{2},\d{3}
+  required_patterns:
+  - 权限|无权|不能|无法|不允许
+  root_cause_dimensions:
+  - permission_policy
+  - response_composition
+  - audit_confirmation
+- id: colloquial_candidate_reliability_followup
+  side_effect: read_only
+  question: 先看吴明华的简历；再问这人靠谱吗，值不值得约一轮？
+  scenario: 口语化问答专项
+  turns:
+  - question: 吴明华的简历
+  - question: 这人靠谱吗，值不值得约一轮？
+  expected_modules:
+  - candidates
+  - resumes
+  - jobs
+  expected_render_blocks:
+  - markdown
+  - entity_cards
+  - sources
+  expect_conversation_turns: 2
+  expected_behavior:
+  - 识别“这人”指代上一轮候选人吴明华
+  - 将“靠谱吗、值不值得约一轮”理解为候选人证据评估
+  - 基于简历评分、岗位匹配、亮点和待复核项回答是否推进
+  - 返回候选人、简历和岗位字段级证据
+  requires_confirmation: false
+  required_patterns:
+  - 吴明华
+  - 后端工程师|供应链总监
+  - 值得推进|下一轮|面试|约
+  root_cause_dimensions:
+  - entity_resolution
+  - intent_recognition
+  - module_relationship
+  - response_composition
+  min_field_evidence_count: 8
+  expected_field_evidence_modules:
+  - candidates
+  - resumes
+  - jobs
+- id: colloquial_employee_late_severity
+  side_effect: read_only
+  question: 吴明华最近迟到是不是有点多，严重吗？
+  scenario: 口语化问答专项
+  expected_modules:
+  - employees
+  - attendance_records
+  - attendance_stats
+  - leave_requests
+  expected_render_blocks:
+  - markdown
+  - kpi
+  - chart
+  - table
+  - timeline
+  - status
+  - sources
+  expected_behavior:
+  - 将“迟到是不是有点多、严重吗”理解为员工级考勤异常问答
+  - 不退化成全局考勤统计或闲聊
+  - 给出异常次数、最近记录和可解释申请依据
+  - 返回员工和考勤字段级证据
+  requires_confirmation: false
+  required_patterns:
+  - 吴明华
+  - 迟到|异常
+  root_cause_dimensions:
+  - intent_recognition
+  - entity_resolution
+  - time_range
+  - data_retrieval
+  - response_composition
+  min_field_evidence_count: 8
+  expected_field_evidence_modules:
+  - employees
+  - attendance_records
+  - attendance_stats
+  - leave_requests
+- id: colloquial_workset_second_candidate_reliability
+  side_effect: read_only
+  question: 电子工程师岗位最近候选人谁更合适？给对比矩阵；再问第二位靠谱吗，值不值得约一轮？
+  scenario: 口语化问答专项
+  turns:
+  - question: 电子工程师岗位最近候选人谁更合适？给对比矩阵
+  - question: 第二位靠谱吗，值不值得约一轮？
+  expected_modules:
+  - jobs
+  - candidates
+  - resumes
+  - interviews
+  expected_render_blocks:
+  - markdown
+  - matrix
+  - table
+  - entity_cards
+  - workset
+  - sources
+  expect_conversation_turns: 2
+  expected_behavior:
+  - 第一轮建立电子工程师岗位候选人排序 WorkSet
+  - 第二轮优先解析“第二位”为上一轮结果集里的第二位候选人
+  - 将“靠谱吗、值不值得约一轮”理解为候选人证据评估
+  - 回答必须基于第二位候选人的简历、岗位和面试证据，不被上一轮焦点候选人抢占
+  requires_confirmation: false
+  required_patterns:
+  - 第二|杨琳
+  - 杨琳
+  - 靠谱|值得|下一轮|面试|约
+  forbidden_patterns:
+  - 基于系统记录看，邓浩|邓浩整体值得推进
+  root_cause_dimensions:
+  - entity_resolution
+  - intent_recognition
+  - module_relationship
+  - response_composition
+  min_field_evidence_count: 8
+  expected_field_evidence_modules:
+  - candidates
+  - resumes
+  - jobs
+  - interviews
+- id: colloquial_workset_who_to_interview_first
+  side_effect: read_only
+  question: 电子工程师岗位最近候选人谁更合适？给对比矩阵；再问刚才那批里先约谁比较稳，别浪费面试官时间
+  scenario: 口语化问答专项
+  turns:
+  - question: 电子工程师岗位最近候选人谁更合适？给对比矩阵
+  - question: 刚才那批里先约谁比较稳，别浪费面试官时间
+  expected_modules:
+  - jobs
+  - candidates
+  - resumes
+  - interviews
+  expected_render_blocks:
+  - markdown
+  - matrix
+  - table
+  - entity_cards
+  - workset
+  - sources
+  expect_conversation_turns: 2
+  expected_behavior:
+  - 第一轮建立电子工程师岗位候选人排序 WorkSet
+  - 第二轮将“刚才那批里”解析为上一轮候选人结果集
+  - 将“先约谁比较稳，别浪费面试官时间”理解为只读推荐/风险判断，不误判为创建面试
+  - 回答必须基于候选人、简历、岗位和面试证据给出优先约面建议
+  requires_confirmation: false
+  required_patterns:
+  - 邓浩|杨琳|高强|约|面试
+  - 稳|优先|先约|推荐|值得
+  forbidden_patterns:
+  - 需要确认|确认后|已为|已安排|创建面试|预约成功
+  root_cause_dimensions:
+  - entity_resolution
+  - intent_recognition
+  - audit_confirmation
+  - response_composition
+  min_field_evidence_count: 8
+  expected_field_evidence_modules:
+  - candidates
+  - resumes
+  - jobs
+  - interviews
+- id: colloquial_payroll_exception_summary
+  side_effect: read_only
+  question: 工资这块有没有啥异常，帮我看一下
+  scenario: 口语化问答专项
+  expected_skill: payroll.anomaly
+  expected_modules:
+  - payroll_records
+  - employees
+  expected_render_blocks:
+  - markdown
+  - kpi
+  - notice
+  - sources
+  expected_behavior:
+  - 将“工资这块有没有啥异常”理解为授权角色下的薪酬汇总/风险查看
+  - 不误判为候选人评估、闲聊或跨模块绩效联动
+  - 明确薪酬数据敏感，仅在授权范围内使用
+  - 返回工资条和员工字段级证据
+  requires_confirmation: false
+  required_patterns:
+  - 薪酬|工资
+  - 敏感信息|敏感
+  root_cause_dimensions:
+  - intent_recognition
+  - permission_policy
+  - data_retrieval
+  - response_composition
+  min_field_evidence_count: 6
+  expected_field_evidence_modules:
+  - payroll_records
+  - employees
+- id: agent_kernel_mainline_page_capability
+  side_effect: read_only
+  question: 在这个页面你能做什么
+  scenario: Agent Kernel 主线矩阵
+  expected_skill: system.page_capability
+  expected_modules:
+  - system_search
+  expected_render_blocks:
+  - markdown
+  - sources
+  expected_behavior:
+  - 在当前页面语境下解释模块能力，而不是误触发员工或候选人证据查询
+  - 说明可查询、可继续追问、支持待确认动作和不支持直接删除修改的边界
+  - routeTrace 必须显示普通请求进入 Skill-first Agent Kernel
+  requires_confirmation: false
+  required_patterns:
+  - 页面|模块|岗位管理|能做
+  forbidden_patterns:
+  - employee_evidence_bundle
+  root_cause_dimensions:
+  - page_context
+  - intent_recognition
+  - response_composition
+- id: agent_kernel_mainline_open_jobs
+  side_effect: read_only
+  question: 现在在招聘的岗位有哪些
+  scenario: Agent Kernel 主线矩阵
+  expected_skill: recruitment.open_jobs
+  expected_modules:
+  - jobs
+  expected_render_blocks:
+  - markdown
+  - entity_cards
+  - sources
+  expected_behavior:
+  - 将“在招聘的岗位”识别为开放岗位列表查询
+  - 不误判为候选人匹配、岗位进展或员工组织岗位体系
+  - 返回岗位记录和可追问的招聘证据
+  requires_confirmation: false
+  required_patterns:
+  - 岗位|招聘|在招|开放
+  root_cause_dimensions:
+  - intent_recognition
+  - data_retrieval
+  - module_relationship
+- id: agent_kernel_mainline_recent_resumes
+  side_effect: read_only
+  question: 最近10天我们收到了哪些简历
+  scenario: Agent Kernel 主线矩阵
+  expected_skill: candidate.recent_resumes
+  expected_modules:
+  - resumes
+  - candidates
+  - jobs
+  expected_render_blocks:
+  - markdown
+  - sources
+  expected_behavior:
+  - 将“收到哪些简历”识别为最近简历查询
+  - 解析 10 天时间窗口或保留明确时间条件
+  - 不退化为招聘概览或候选人搜索
+  requires_confirmation: false
+  required_patterns:
+  - 简历|投递|收到
+  root_cause_dimensions:
+  - intent_recognition
+  - time_range
+  - data_retrieval
+- id: agent_kernel_mainline_candidate_job_fit
+  side_effect: read_only
+  question: 孙悦的个人能力怎么样，符合我们的电子工程师岗位要求吗
+  scenario: Agent Kernel 主线矩阵
+  expected_skill: candidate.job_fit
+  expected_modules:
+  - candidates
+  - resumes
+  - jobs
+  expected_render_blocks:
+  - markdown
+  - entity_cards
+  - sources
+  expected_behavior:
+  - 抽取候选人孙悦和目标岗位电子工程师
+  - 将“个人能力/岗位要求/符合吗”识别为候选人岗位匹配评估
+  - 不用同岗位其他候选人替代明确点名候选人
+  requires_confirmation: false
+  required_patterns:
+  - 孙悦
+  - 电子工程师
+  - 匹配|符合|岗位要求|能力
+  forbidden_patterns:
+  - 罗伟整体|邓浩整体|杨琳整体
+  root_cause_dimensions:
+  - intent_recognition
+  - entity_resolution
+  - module_relationship
+  - response_composition
+- id: agent_kernel_mainline_interview_confirm_named_candidate
+  side_effect: read_only
+  question: 孙悦，我想给他安排一个明天早晨八点的面试
+  scenario: Agent Kernel 主线矩阵
+  expected_skill: interview.schedule_confirm_create
+  expected_modules:
+  - candidates
+  - resumes
+  - interviews
+  expected_render_blocks:
+  - markdown
+  - confirmation
+  requires_confirmation: true
+  expected_behavior:
+  - 将“安排面试”识别为副作用 Skill
+  - 通过候选人/简历证据定位孙悦，确认前只生成待确认动作
+  - 不直接写入面试记录，不要求用户重新查询已经明确点名的候选人
+  required_patterns:
+  - 孙悦
+  - 面试
+  - 确认|待确认|确认后
+  forbidden_patterns:
+  - 无法确定.*孙悦|不知道.*孙悦|这几个人
+  root_cause_dimensions:
+  - intent_recognition
+  - entity_resolution
+  - audit_confirmation
+  - tool_calling
+- id: agent_kernel_mainline_employee_profile
+  side_effect: read_only
+  question: 吴明华这个员工最近状态如何
+  scenario: Agent Kernel 主线矩阵
+  expected_skill: employee.profile
+  expected_modules:
+  - employees
+  - attendance_records
+  - approvals
+  - performance_reviews
+  expected_render_blocks:
+  - markdown
+  - entity_cards
+  - sources
+  expected_behavior:
+  - 将“员工最近状态如何”识别为员工画像/证据查询
+  - 汇总员工、考勤、审批、绩效等跨模块证据
+  - 不误选候选人简历或招聘候选人 Skill
+  requires_confirmation: false
+  required_patterns:
+  - 吴明华
+  - 员工|状态|画像
+  root_cause_dimensions:
+  - intent_recognition
+  - entity_resolution
+  - module_relationship
+  - data_retrieval
+- id: agent_kernel_mainline_attendance_anomaly
+  side_effect: read_only
+  question: 这个月谁打卡不太正常
+  scenario: Agent Kernel 主线矩阵
+  expected_skill: attendance.anomaly
+  expected_modules:
+  - employees
+  - attendance_records
+  - attendance_stats
+  expected_render_blocks:
+  - markdown
+  - table
+  - sources
+  expected_behavior:
+  - 将“不太正常”理解为考勤异常而不是泛员工搜索
+  - 使用本月时间范围
+  - 返回异常人员或异常记录证据
+  requires_confirmation: false
+  required_patterns:
+  - 考勤|打卡|异常|迟到|缺卡|早退
+  root_cause_dimensions:
+  - intent_recognition
+  - time_range
+  - data_retrieval
+- id: agent_kernel_mainline_performance_anomaly
+  side_effect: read_only
+  question: 绩效这块有没有不太正常的人
+  scenario: Agent Kernel 主线矩阵
+  expected_skill: performance.anomaly
+  expected_modules:
+  - performance_reviews
+  - employees
+  expected_render_blocks:
+  - markdown
+  - sources
+  expected_behavior:
+  - 将“绩效这块不正常”识别为绩效异常查询
+  - 不误判为薪酬异常或员工普通画像
+  - 返回绩效记录和员工证据
+  requires_confirmation: false
+  required_patterns:
+  - 绩效|异常|不正常
+  root_cause_dimensions:
+  - intent_recognition
+  - data_retrieval
+  - response_composition
+- id: agent_kernel_mainline_approval_todo
+  side_effect: read_only
+  question: 我这边还有哪些待办审批
+  scenario: Agent Kernel 主线矩阵
+  expected_skill: approval.todo
+  expected_modules:
+  - approvals
+  expected_render_blocks:
+  - markdown
+  - table
+  - sources
+  expected_behavior:
+  - 将“我这边/待办审批”识别为当前用户待审批列表
+  - 不执行审批动作
+  - 为后续“第一条/第二条通过或驳回”建立可解析结果集
+  requires_confirmation: false
+  required_patterns:
+  - 审批|待办|待处理
+  root_cause_dimensions:
+  - intent_recognition
+  - data_retrieval
+  - entity_resolution
+- id: agent_kernel_mainline_feedback_bug_todo
+  side_effect: read_only
+  question: 还有什么系统 bug 没修
+  scenario: Agent Kernel 主线矩阵
+  expected_skill: feedback.bug_todo
+  expected_modules:
+  - feedback
+  expected_render_blocks:
+  - markdown
+  - sources
+  expected_behavior:
+  - 将系统 bug、没修识别为待处理 bug 反馈
+  - 不误判为普通系统帮助或工程报表
+  - 返回待处理反馈证据或空结果说明
+  requires_confirmation: false
+  required_patterns:
+  - bug|故障|反馈|待处理|没修
+  root_cause_dimensions:
+  - intent_recognition
+  - data_retrieval
+  - response_composition
+- id: agent_kernel_mainline_notification_create_confirm
+  side_effect: read_only
+  question: 给全员推一条 HR 通知：明天下午三点全员培训
+  scenario: Agent Kernel 主线矩阵
+  expected_skill: notification.create_confirm
+  expected_modules:
+  - notifications
+  expected_render_blocks:
+  - markdown
+  - confirmation
+  requires_confirmation: true
+  expected_behavior:
+  - 将“推一条 HR 通知”识别为通知创建确认动作
+  - 只生成待确认动作，确认前不写通知中心
+  - 不把通知正文误路由为反馈或闲聊
+  required_patterns:
+  - 通知|培训
+  - 确认|待确认|确认后
+  root_cause_dimensions:
+  - intent_recognition
+  - audit_confirmation
+  - tool_calling
+- id: agent_kernel_mainline_workset_second_followup
+  side_effect: read_only
+  question: 电子工程师岗位最近候选人谁更合适？给对比矩阵；然后追问第二个人风险和推进建议
+  scenario: Agent Kernel 主线矩阵
+  turns:
+  - question: 电子工程师岗位最近候选人谁更合适？给对比矩阵
+  - question: 第二个人风险和推进建议
+  expected_skill: candidate.evaluation
+  expected_turn_skills:
+  - recruitment.job_candidate_match
+  - candidate.evaluation
+  expected_modules:
+  - jobs
+  - candidates
+  - resumes
+  - interviews
+  expected_render_blocks:
+  - markdown
+  - matrix
+  - workset
+  - sources
+  expect_conversation_turns: 2
+  expected_behavior:
+  - 第一轮选择岗位候选人匹配矩阵并建立 WorkSet
+  - 第二轮将“第二个人”解析为上一轮结果集第二位候选人
+  - 第二轮选择候选人评估或等价候选人证据 Skill，而不是重新查岗位列表
+  requires_confirmation: false
+  required_patterns:
+  - 第二|风险|推进
+  forbidden_patterns:
+  - 需要重新查询岗位|不知道第二个人
+  root_cause_dimensions:
+  - intent_recognition
+  - entity_resolution
+  - module_relationship
+- id: agent_kernel_mainline_smart_readonly_query
+  side_effect: read_only
+  question: 低绩效和考勤异常交叉统计一下
+  scenario: Agent Kernel 主线矩阵
+  expected_skill: smart.data_query
+  expected_modules:
+  - analytics
+  expected_render_blocks:
+  - markdown
+  - table
+  - sources
+  expected_behavior:
+  - 将固定 Skill 难覆盖的跨模块统计交给只读 smart.data_query
+  - 不允许 planner 直接注入 SQL 或执行写操作
+  - 输出必须能追踪只读统计依据
+  requires_confirmation: false
+  forbidden_patterns:
+  - DELETE|UPDATE|INSERT|DROP
+  root_cause_dimensions:
+  - intent_recognition
+  - tool_calling
+  - data_retrieval
+- id: resume_media_preview_denghao
+  side_effect: read_only
+  question: 给我看电子工程师候选人邓浩的简历附件预览和证据
+  scenario: 多形态附件预览
+  expected_modules:
+  - candidates
+  - resumes
+  - jobs
+  - interviews
+  expected_render_blocks:
+  - markdown
+  - entity_cards
+  - media
+  - sources
+  expected_behavior:
+  - 识别候选人邓浩和电子工程师岗位
+  - 拉取候选人、简历、岗位和面试证据
+  - 对有权限角色展示简历附件预览块
+  - 证据需能跳转候选人、简历或岗位页面
+  requires_confirmation: false
+  required_patterns:
+  - 邓浩
+  - 简历
+  root_cause_dimensions:
+  - entity_resolution
+  - data_retrieval
+  - frontend_rendering
+  - response_composition
+  min_field_evidence_count: 6
+  expected_field_evidence_modules:
+  - candidates
+  - resumes
+  - jobs
+  - interviews
+- id: recruitment_workset_followup_second_candidate
+  side_effect: read_only
+  question: 电子工程师岗位最近候选人谁更合适？给对比矩阵；然后追问第二个人风险和推进建议
+  scenario: 多轮追问与结果集记忆
+  turns:
+  - question: 电子工程师岗位最近候选人谁更合适？给对比矩阵
+  - question: 那第二个人有什么风险，下一步怎么推进？
+  expected_modules:
+  - jobs
+  - candidates
+  - resumes
+  - interviews
+  expected_render_blocks:
+  - markdown
+  - matrix
+  - table
+  - entity_cards
+  - workset
+  - actions
+  - sources
+  expect_conversation_turns: 2
+  expected_behavior:
+  - 第一轮建立电子工程师岗位候选人结果集
+  - 第二轮解析“第二个人”为上一轮结果集里的第二位候选人
+  - 追问回答必须基于该候选人的简历/面试证据，不重新泛化搜索
+  - 返回风险点和下一步推进建议
+  - 返回结构化推荐下一步动作，写入类动作必须继续走二次确认
+  requires_confirmation: false
+  required_patterns:
+  - 第二|杨琳|风险|下一步|推进
+  - 杨琳
+  forbidden_patterns:
+  - 第\s*2\s*(?:名|位|个)?.{0,30}罗伟|罗伟.{0,30}第\s*2\s*(?:名|位|个)?
+  root_cause_dimensions:
+  - page_context
+  - entity_resolution
+  - module_relationship
+  - response_composition
+  min_field_evidence_count: 8
+  expected_field_evidence_modules:
+  - jobs
+  - candidates
+  - resumes
+  - interviews

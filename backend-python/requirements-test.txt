@@ -1,0 +1,5 @@
+# Test-only dependencies. Kept separate from the production backend image.
+-r requirements.txt
+
+pytest==8.4.1
+hypothesis==6.136.9

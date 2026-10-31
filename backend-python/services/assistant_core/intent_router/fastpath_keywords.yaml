@@ -1,0 +1,20 @@
+# FastPath 关键词配置（v2 意图路由器）
+#
+# 硬性规则：本文件仅用于高风险域（high-risk）的关键词直通。中等 / 低风险域
+# 的关键词必须经过 Retriever + Reranker，不得在这里登记。
+#
+# 加载时校验：每个条目的 ``task_template_id`` 必须满足以下之一：
+#   - 精确等于 ``forbidden_action_response``，或者
+#   - 以 ``payroll_`` 为前缀（高风险薪酬域）。
+# 任何其它 ``task_template_id`` 都会在 ``FastPath`` 启动加载时抛出
+# ``ValueError``，避免静默扩大快速通道的覆盖面。
+#
+# 关于写动作（delete / SQL / 批量发送 等）：写意图通过运行时的
+# ``guardrails.detect_write_intent`` 识别，**不**通过本 yaml；本文件不需要
+# 配置 ``forbidden_action_response``，保留这条注释只是为了文档完整。
+
+payroll:
+  keywords: ['工资', '工资条', '薪资', '薪酬', '社保', '个税']
+  task_template_id: payroll_month_summary
+  candidate_skills: [payroll_analysis]
+  risk_level: high

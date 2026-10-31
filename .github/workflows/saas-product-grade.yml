@@ -1,0 +1,71 @@
+name: SaaS Product Grade Verification
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Lint frontend
+        run: npm run lint -- --max-warnings=0
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Verify public docs sync
+        run: npm run verify:public-docs-sync
+
+      - name: Verify go-live evidence templates
+        run: npm run verify:go-live-evidence-templates
+
+      - name: Verify assistant frontend contract
+        run: npm run verify:assistant-contract
+
+      - name: Verify TypeScript no-check budget
+        run: npm run verify:ts-nocheck-budget
+
+      - name: Verify frontend console usage
+        run: npm run verify:frontend-console-usage
+
+      - name: Compile backend Python
+        run: python -m compileall -q backend-python
+
+      - name: Install backend test dependencies
+        run: python -m pip install -r backend-python/requirements-test.txt
+
+      - name: Run offline backend release tests
+        run: >-
+          python -m pytest -q
+          backend-python/tests/test_saas_tenancy.py
+          backend-python/tests/test_release_security.py
+          backend-python/tests/test_platform_billing.py
+          backend-python/tests/test_tenant_metering.py
+          backend-python/tests/test_tenant_data_lifecycle.py
+          backend-python/tests/test_proxy_redirects.py
+          backend-python/tests/test_schema_migrations.py
+          backend-python/tests/test_service_configuration.py
+          backend-python/tests/test_platform_product_operations.py
+          backend-python/tests/test_tenant_data_request_flow.py
+          backend-python/tests/test_billing_lifecycle.py
