@@ -51,6 +51,28 @@ CHECKLIST_ITEMS = (
     ('device', '电脑和设备'),
     ('agent_equipment', '智能体配备'),
 )
+RESULT_STATUSES = {'synced', 'skipped', 'pending_confirmation', 'retrying', 'failed'}
+
+
+def _contract_result(payload, result):
+    status = str(result.get('status') or 'failed').lower()
+    if status == 'stale':
+        status = 'skipped'
+    elif status == 'scheduled':
+        status = 'pending_confirmation'
+    if status not in RESULT_STATUSES:
+        status = 'failed'
+    return {
+        **result,
+        'event_id': result.get('event_id') or payload['event_id'],
+        'target_system': 'M07_HLC',
+        'status': status,
+        'changed': result.get('changed') or {
+            'closed_items': len(result.get('closed_items') or []),
+            'reassigned_tasks': len(result.get('reassigned_tasks') or []),
+        },
+        'received_at': _now().isoformat(),
+    }
 
 
 def _now():
@@ -179,7 +201,7 @@ def apply_person_lifecycle_event(payload):
     if existing:
         result = dict(existing.result or {})
         result['duplicate'] = True
-        return result, 200
+        return _contract_result(payload, result), 200
     employee, error = _employee_for_event(payload)
     if error:
         return {'status': 'failed', 'error': error[0]}, error[1]
@@ -205,7 +227,7 @@ def apply_person_lifecycle_event(payload):
         event_type=payload['event_type'], status=result['status'], result=result,
     ))
     db.session.commit()
-    return result, 200
+    return _contract_result(payload, result), 200
 
 
 @person_lifecycle_bp.route('/internal/aeos/person-lifecycle', methods=['POST'])
