@@ -13,7 +13,8 @@ from .enterprise_applications import (
     enterprise_applications_platform_bp,
     enterprise_applications_public_bp,
 )
+from .person_lifecycle import person_lifecycle_bp
 
 __all__ = ['auth_bp', 'jobs_bp', 'resumes_bp', 'interviews_bp', 'misc_bp',
            'tasks_bp', 'hrm_bp', 'org_bp', 'portal_bp', 'platform_bp', 'extensions_bp',
-           'enterprise_applications_platform_bp', 'enterprise_applications_public_bp']
+           'enterprise_applications_platform_bp', 'enterprise_applications_public_bp', 'person_lifecycle_bp']
