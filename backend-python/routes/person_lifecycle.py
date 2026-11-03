@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import os
 import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from uuid import uuid4
 
 from flask import Blueprint, jsonify, request
+from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from models import AssistantSession, Employee, EmployeePortalAccount, OnboardingTask, User, db
 
@@ -52,6 +56,7 @@ CHECKLIST_ITEMS = (
     ('agent_equipment', '智能体配备'),
 )
 RESULT_STATUSES = {'synced', 'skipped', 'pending_confirmation', 'retrying', 'failed'}
+PERSON_CHANGE_ACTIONS = {'hire', 'transfer', 'offboard', 'reinstate'}
 
 
 def _contract_result(payload, result):
@@ -83,6 +88,47 @@ def _secret():
     return os.getenv('AEOS_PERSON_LIFECYCLE_SECRET') or os.getenv('HLC_PERSON_LIFECYCLE_SECRET') or ''
 
 
+def _m01_change_url():
+    return (
+        os.getenv('AEOS_M01_PERSON_CHANGE_URL')
+        or os.getenv('M01_PERSON_CHANGE_URL')
+        or (os.getenv('AEOS_M01_URL', '').rstrip('/') + '/integrations/m07' if os.getenv('AEOS_M01_URL') else '')
+    )
+
+
+def _m01_change_secret():
+    return os.getenv('AEOS_M01_WEBHOOK_SECRET') or os.getenv('M07_WEBHOOK_SECRET') or ''
+
+
+def _submit_m01_person_change(payload):
+    """把 M07 的人员变动资料交给 M01；M01 是唯一的审核和办理入口。"""
+    url = _m01_change_url()
+    secret = _m01_change_secret()
+    if not url or not secret:
+        return {'status': 'failed', 'reason': 'M01人员变动接口未配置'}, 503
+    raw = json.dumps(payload, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+    signature = hmac.new(secret.encode('utf-8'), raw, hashlib.sha256).hexdigest()
+    req = urllib.request.Request(
+        url,
+        data=raw,
+        headers={'Content-Type': 'application/json', 'X-M01-Signature': f'sha256={signature}'},
+        method='POST',
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=float(os.getenv('AEOS_M01_TIMEOUT_SECONDS', '5'))) as response:
+            body = response.read().decode('utf-8')
+            return (json.loads(body) if body else {'status': 'failed', 'reason': 'M01返回为空'}), response.status
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode('utf-8', errors='replace')
+        try:
+            result = json.loads(body) if body else {'status': 'failed', 'reason': f'M01返回HTTP {exc.code}'}
+        except json.JSONDecodeError:
+            result = {'status': 'failed', 'reason': f'M01返回HTTP {exc.code}'}
+        return result, exc.code
+    except (OSError, ValueError):
+        return {'status': 'retrying', 'reason': 'M01暂时无法访问'}, 503
+
+
 def _verify_request():
     key_id = request.headers.get('X-AEOS-Key-Id')
     timestamp = request.headers.get('X-AEOS-Timestamp')
@@ -101,6 +147,55 @@ def _verify_request():
     if not _secret() or not hmac.compare_digest(expected, signature):
         return False, ('人员同步签名无效', 401)
     return True, None
+
+
+@person_lifecycle_bp.route('/api/hrm/person-change-requests', methods=['POST'])
+@jwt_required()
+def submit_person_change_request():
+    """M07填写人员变动资料后提交到M01，不能在M07直接改最终状态。"""
+    body = request.get_json(silent=True) or {}
+    action = str(body.get('action') or '').strip().lower()
+    if action not in PERSON_CHANGE_ACTIONS:
+        return jsonify({'status': 'failed', 'reason': '办理事项只能是入职、调岗、离职或复职'}), 400
+
+    requester_id = str(get_jwt_identity() or '').strip()
+    requester = db.session.get(User, requester_id)
+    if not requester or requester.status != 'active':
+        return jsonify({'status': 'failed', 'reason': '当前办理人员不是在职人员'}), 403
+
+    person_id = str(body.get('person_id') or body.get('employee_id') or '').strip()
+    employee_no = str(body.get('employee_no') or '').strip()
+    employee = None
+    if person_id:
+        employee = Employee.query.filter_by(id=person_id, tenant_id=requester.tenant_id).first()
+    if not employee and employee_no:
+        employee = Employee.query.filter_by(employee_no=employee_no, tenant_id=requester.tenant_id).first()
+    if action != 'hire' and not employee:
+        return jsonify({'status': 'failed', 'reason': '找不到要办理的人员'}), 404
+
+    if body.get('tenant_id') and str(body['tenant_id']) != str(requester.tenant_id):
+        return jsonify({'status': 'failed', 'reason': '不能办理其他单位的人员'}), 403
+    required = ('department_id', 'position_id', 'job_title', 'effective_at', 'reason')
+    missing = next((field for field in required if not str(body.get(field) or (getattr(employee, field, '') if employee else '')).strip()), None)
+    if missing:
+        return jsonify({'status': 'failed', 'reason': f'请填写{missing}'}), 400
+
+    effective_at = str(body.get('effective_at') or '').strip()
+    payload = {
+        'type': 'person.change.request',
+        'tenant_id': str(requester.tenant_id),
+        'requester_id': requester_id,
+        'person_id': str(employee.id if employee else person_id),
+        'action': action,
+        'department_id': str(body.get('department_id') or employee.department_id),
+        'position_id': str(body.get('position_id') or employee.position_id),
+        'job_title': str(body.get('job_title') or employee.job_title),
+        'effective_at': effective_at,
+        'reason': str(body.get('reason') or '').strip(),
+        'idempotency_key': str(body.get('idempotency_key') or f'{requester.tenant_id}:{employee.id if employee else person_id}:{action}:{effective_at}'),
+    }
+    result, status = _submit_m01_person_change(payload)
+    return jsonify(result), status
 
 
 def _employee_for_event(payload):

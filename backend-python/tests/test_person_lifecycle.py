@@ -20,6 +20,7 @@ from models import (
 from app import _register_password_change_gate
 from routes.portal import portal_bp
 from routes.person_lifecycle import PersonLifecycleChecklist, PersonLifecycleEvent, person_lifecycle_bp
+import routes.person_lifecycle as person_lifecycle_route
 
 
 SECRET = 'hlc-person-lifecycle-test-secret'
@@ -177,3 +178,44 @@ def test_existing_portal_token_is_rejected_after_offboard(lifecycle_app):
         '/api/portal/me', headers={'Authorization': f'Bearer {token}'},
     )
     assert response.status_code == 401
+
+
+def test_m07_submits_person_change_to_m01_with_plain_person_details(lifecycle_app, monkeypatch):
+    captured = {}
+
+    def fake_submit(payload):
+        captured.update(payload)
+        return {'status': 'pending_confirmation', 'request_id': 'PCR-1'}, 200
+
+    monkeypatch.setattr(person_lifecycle_route, '_submit_m01_person_change', fake_submit)
+    with lifecycle_app.app_context():
+        token = create_access_token('user-1')
+    response = lifecycle_app.test_client().post(
+        '/api/hrm/person-change-requests',
+        json={
+            'person_id': 'emp-1',
+            'action': 'offboard',
+            'department_id': 'dept-rd',
+            'position_id': 'pos-engineer',
+            'job_title': '电子工程师',
+            'effective_at': '2026-11-03T09:00:00+08:00',
+            'reason': '员工离职',
+            'idempotency_key': 'tenant-hengjian:emp-1:offboard:20261103',
+        },
+        headers={'Authorization': f'Bearer {token}'},
+    )
+
+    assert response.status_code == 200
+    assert captured == {
+        'type': 'person.change.request',
+        'tenant_id': 'tenant-hengjian',
+        'requester_id': 'user-1',
+        'person_id': 'emp-1',
+        'action': 'offboard',
+        'department_id': 'dept-rd',
+        'position_id': 'pos-engineer',
+        'job_title': '电子工程师',
+        'effective_at': '2026-11-03T09:00:00+08:00',
+        'reason': '员工离职',
+        'idempotency_key': 'tenant-hengjian:emp-1:offboard:20261103',
+    }
