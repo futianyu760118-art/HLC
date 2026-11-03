@@ -100,6 +100,11 @@ def _m01_change_secret():
     return os.getenv('AEOS_M01_WEBHOOK_SECRET') or os.getenv('M07_WEBHOOK_SECRET') or ''
 
 
+def _m01_person_id(employee):
+    """统一使用人员编号；有上游统一编号时优先使用它，不能把 HLC 用户表 ID 当人员 ID。"""
+    return str(employee.oa_person_id or employee.id)
+
+
 def _submit_m01_person_change(payload):
     """把 M07 的人员变动资料交给 M01；M01 是唯一的审核和办理入口。"""
     url = _m01_change_url()
@@ -168,6 +173,8 @@ def submit_person_change_request():
     employee = None
     if person_id:
         employee = Employee.query.filter_by(id=person_id, tenant_id=requester.tenant_id).first()
+    if not employee and person_id:
+        employee = Employee.query.filter_by(oa_person_id=person_id, tenant_id=requester.tenant_id).first()
     if not employee and employee_no:
         employee = Employee.query.filter_by(employee_no=employee_no, tenant_id=requester.tenant_id).first()
     if action != 'hire' and not employee:
@@ -181,11 +188,12 @@ def submit_person_change_request():
         return jsonify({'status': 'failed', 'reason': f'请填写{missing}'}), 400
 
     effective_at = str(body.get('effective_at') or '').strip()
+    requester_employee = db.session.get(Employee, requester.employee_id) if requester.employee_id else None
     payload = {
         'type': 'person.change.request',
         'tenant_id': str(requester.tenant_id),
-        'requester_id': requester_id,
-        'person_id': str(employee.id if employee else person_id),
+        'requester_id': _m01_person_id(requester_employee) if requester_employee else requester_id,
+        'person_id': _m01_person_id(employee) if employee else person_id,
         'action': action,
         'department_id': str(body.get('department_id') or employee.department_id),
         'position_id': str(body.get('position_id') or employee.position_id),

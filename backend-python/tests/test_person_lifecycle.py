@@ -209,7 +209,7 @@ def test_m07_submits_person_change_to_m01_with_plain_person_details(lifecycle_ap
     assert captured == {
         'type': 'person.change.request',
         'tenant_id': 'tenant-hengjian',
-        'requester_id': 'user-1',
+        'requester_id': 'emp-1',
         'person_id': 'emp-1',
         'action': 'offboard',
         'department_id': 'dept-rd',
