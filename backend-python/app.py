@@ -304,7 +304,7 @@ def _register_password_change_gate(app: Flask) -> None:
             return None
 
         from flask_jwt_extended import get_jwt, get_jwt_identity, verify_jwt_in_request
-        from models import EmployeePortalAccount, User
+        from models import Employee, EmployeePortalAccount, User
 
         try:
             verify_jwt_in_request(optional=True)
@@ -324,6 +324,12 @@ def _register_password_change_gate(app: Flask) -> None:
                     'code': 'PORTAL_ACCOUNT_ONLY',
                 }), 403
             account = db.session.get(EmployeePortalAccount, user_id)
+            if account and account.status != 'active':
+                return jsonify({'error': '账号已停用，不能继续使用'}), 401
+            if account and account.employee_id:
+                employee = db.session.get(Employee, account.employee_id)
+                if employee and employee.status != 'active':
+                    return jsonify({'error': '人员已离职，不能继续使用'}), 401
             if account and bool(getattr(account, 'must_change_password', False)):
                 return jsonify({
                     'error': '首次登录需要修改密码',
@@ -338,6 +344,8 @@ def _register_password_change_gate(app: Flask) -> None:
             }), 403
 
         user = db.session.get(User, user_id)
+        if user and user.status != 'active':
+            return jsonify({'error': '账号已停用，不能继续使用'}), 401
         if user and bool(getattr(user, 'must_change_password', False)):
             return jsonify({
                 'error': '首次登录需要修改密码',
@@ -403,7 +411,7 @@ def create_app() -> Flask:
     from routes import (
         auth_bp, enterprise_applications_platform_bp, enterprise_applications_public_bp,
         extensions_bp, hrm_bp, interviews_bp, jobs_bp, misc_bp, org_bp, platform_bp, portal_bp,
-        resumes_bp, tasks_bp,
+        resumes_bp, tasks_bp, person_lifecycle_bp,
     )
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(jobs_bp, url_prefix='/api/jobs')
@@ -418,6 +426,7 @@ def create_app() -> Flask:
     app.register_blueprint(platform_bp, url_prefix='/api/platform')
     app.register_blueprint(enterprise_applications_public_bp, url_prefix='/api/public')
     app.register_blueprint(enterprise_applications_platform_bp, url_prefix='/api/platform')
+    app.register_blueprint(person_lifecycle_bp)
 
     _register_request_lifecycle(app)
     _register_tenant_context(app)
