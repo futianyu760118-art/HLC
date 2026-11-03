@@ -188,7 +188,10 @@ def submit_person_change_request():
         return jsonify({'status': 'failed', 'reason': f'请填写{missing}'}), 400
 
     effective_at = str(body.get('effective_at') or '').strip()
-    requester_employee = db.session.get(Employee, requester.employee_id) if requester.employee_id else None
+    requester_employee = (
+        Employee.query.filter_by(id=requester.employee_id, tenant_id=requester.tenant_id).first()
+        if requester.employee_id else None
+    )
     payload = {
         'type': 'person.change.request',
         'tenant_id': str(requester.tenant_id),
